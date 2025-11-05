@@ -1,0 +1,2 @@
+sdk.dir=/Users/mohammadjelve/Library/Android/sdk
+flutter.sdk=/Users/mohammadjelve/Development/flutter

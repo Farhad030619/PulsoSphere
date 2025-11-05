@@ -1,0 +1,33 @@
+# Uncomment this line to define a global platform for your project
+platform :ios, '12.0'
+
+# Sökväg till din Flutter SDK
+flutter_root = ENV['FLUTTER_ROOT'] || '/Users/mohammadjelve/Development/flutter'
+
+# Namnet på Xcode‑projektet
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+# Ladda in Flutter‑podhelper
+require File.expand_path(File.join(flutter_root, 'packages', 'flutter_tools', 'bin', 'podhelper'))
+
+# Hämta in alla Flutter‑pods automatiskt
+install_all_flutter_pods(flutter_root)
+
+# Om du har en Notification‑extension (OneSignal etc), behåll blocket – annars kan du ta bort det
+target 'OneSignalNotificationServiceExtension' do
+  install_all_flutter_pods(flutter_root)
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      # Säkerställ att alla pods bygger mot iOS 12.0 eller högre
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+    end
+  end
+end
+
