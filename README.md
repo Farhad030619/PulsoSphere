@@ -22,7 +22,6 @@ PulsoSphere är ett bärbart system som mäter **EKG** (hjärta) och **EMG** (mu
 - [Säkerhet & sekretess](#säkerhet--sekretess)
 - [Begränsningar & framtida arbete](#begränsningar--framtida-arbete)
 - [Bidra](#bidra)
-- [Licens](#licens)
 - [Team & kurs](#team--kurs)
 
 ---
