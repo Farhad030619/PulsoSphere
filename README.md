@@ -1,251 +1,292 @@
-# PulsoSphere — Bärbart EKG/EMG-system
 
-PulsoSphere är ett öppet studentprojekt som bygger ett **bärbart armband** som *samtidigt* mäter **EKG** (hjärtrytm) och **EMG** (muskelaktivitet) och visar data i **realtid** i en mobilapp. Systemet består av:
+PulsoSphere
 
-* **Hårdvara:** Raspberry Pi Zero 2 W + ADS1015 (ADC), AD8232 (EKG), MyoWare 2.0 (EMG) + eget PCB
-* **Backend:** Flask-API som tar emot/returnerar mätdata och lagrar i databas (MySQL/SQLite)
-* **App:** Flutter-klient med Live-vyer, Historik och Inställningar
+PulsoSphere är ett bärbart system som mäter **EKG** (hjärta) och **EMG** (muskler) i realtid. Hårdvaran samlar signaler via **ADS1015** till **Raspberry Pi Zero 2 W**, där signalen filtreras och hjärtslag detekteras. Data skickas till ett **Flask-API** (MySQL/MariaDB) som konsumeras av en **Flutter-app** för live-grafer, puls (BPM) och historik.
 
-> **Obs!** Detta är **inte en medicinsk produkt**. Använd endast för utbildning/utveckling.
+> **Viktig notis:** Detta är ett student-/demoprojekt och **inte** avsett för medicinsk diagnostik eller kliniskt bruk.
+
+---
+
+## Innehåll
+- [Översikt](#översikt)
+- [Systemarkitektur](#systemarkitektur)
+- [Funktioner](#funktioner)
+- [Hårdvara](#hårdvara)
+- [Projektstruktur](#projektstruktur)
+- [Kom igång](#kom-igång)
+  - [Backend (Flask + MySQL/MariaDB)](#backend-flask--mysqlmariadb)
+  - [API](#api)
+  - [Exponera API:t via ngrok (valfritt)](#exponera-apit-via-ngrok-valfritt)
+  - [Mobilapp (Flutter)](#mobilapp-flutter)
+- [Testning](#testning)
+- [Säkerhet & sekretess](#säkerhet--sekretess)
+- [Begränsningar & framtida arbete](#begränsningar--framtida-arbete)
+- [Bidra](#bidra)
+- [Licens](#licens)
+- [Team & kurs](#team--kurs)
+
+---
+
+## Översikt
+PulsoSphere demonstrerar en lågkostnadsplattform för bärbar fysiologimätning:
+1. **Sensorer** (EKG/EMG) → 2. **ADC (ADS1015)** → 3. **Raspberry Pi Zero 2 W** (digital filtrering, R-toppdetektion, BPM) → 4. **Flask-API** (REST) + **MySQL/MariaDB** → 5. **Flutter-app** (livevisualisering & historik).
+
+### Signalbehandling i korthet
+- EKG filtreras med bandpass (t.ex. Butterworth ~0,25–10 Hz).
+- R-toppar detekteras med en robust tröskel/logik.
+- BPM beräknas löpande från R-R-intervall.
+- EMG samplas och visas som amplitud/tidsserie.
+
+---
+
+## Systemarkitektur
+```
+
+[AD8232 EKG]  
+>--[ ADS1015 (I²C) ]--> [ Raspberry Pi Zero 2 W ]
+[MyoWare EMG] /                               |
+v
+[ Flask-API (REST) ] <--> [ MySQL/MariaDB ]
+|
+v
+[ Flutter-app ]
+
+```
+
+- **Pi Zero 2 W:** centralenhet (Wi-Fi/BLE, 40-pin GPIO).
+- **ADS1015:** 12-bitars ADC via I²C.
+- **AD8232 (EKG)** ansluts till A0, **MyoWare 2.0 (EMG)** till A1.
+- **API:** REST-endpoints för att *skicka in* (POST) och *hämta* (GET) senaste mätning.
+- **App:** pollar backend periodiskt (t.ex. ~3 s), visar BPM, EKG-/EMG-grafer samt historik.
 
 ---
 
 ## Funktioner
-
-* Samtidig insamling av EKG & EMG
-* Realtidsfiltrering av EKG (Butterworth bandpass) + R-toppdetektion → BPM
-* REST-API (`POST /data`, `GET /data`) med DB-lagring (MySQL/SQLite)
-* Flutter-app (Live EKG/EMG, Historik, Inställningar)
-* Modulär hårdvara med eget PCB (KiCad)
+- Realtids-EKG med digitalt bandpassfilter och R-toppdetektion → stabil BPM.
+- EMG-insamling via MyoWare och visning i appen.
+- Backend lagrar mätningar (BPM + listor för EKG/EMG + tidsstämpel) i databas.
+- Flutter-appen har vyer för **Live EKG**, **Live EMG**, **Historik** och **Inställningar**.
+- Valfri tunnel via **ngrok** när man vill demo:a utanför lokalt nät.
 
 ---
 
-## Repo-struktur
+## Hårdvara
+- **Raspberry Pi Zero 2 W** – central enhet.
+- **ADS1015** – 12-bitars ADC via I²C.
+- **AD8232** – EKG-modul (A0).
+- **MyoWare 2.0** – EMG-modul (A1).
+- **Eget PCB (KiCad)** – headers för modulär inkoppling, korta kablar, B.Cu-routing.
 
+> Lägg gärna in KiCad-filer (scheman, PCB, Gerbers) i `/hardware/` om de inte redan finns.
+
+---
+
+## Projektstruktur
+> Exempel – justera efter ert faktiska repo.
 ```
+
 PulsoSphere/
 ├─ backend/
-│  └─ flask-api/           # Flask-API + DB-integration (app_db.py, db.py)
-├─ device/
-│  └─ pi-scripts/          # Raspberry Pi-kod (ADC-läsning, filtrering, POST till API)
-├─ mobile/
-│  └─ flutter-app/         # Flutter-klient
-├─ db/
-│  ├─ mysql/schema.sql     # MySQL-schema (measurements)
-│  └─ sqlite/schema.sql    # SQLite-schema
-├─ docs/                   # Bilder, pinout, BOM, API-dokumentation m.m.
-└─ .github/workflows/ci.yml
-```
+│  ├─ app.py
+│  ├─ requirements.txt
+│  └─ src/...
+├─ app/                 # Flutter
+│  ├─ lib/
+│  ├─ pubspec.yaml
+│  └─ android/ios/...
+├─ hardware/            # KiCad, Gerbers, PDF-scheman
+├─ docs/                # ev. extra dokumentation
+└─ README.md
+
+````
 
 ---
 
 ## Kom igång
 
-### 1) Backend (Flask + DB)
+### Förkrav
+- **Backend:** Python 3.10+, Flask, flask-cors, MySQL-drivrutin (t.ex. `mysqlclient` eller `pymysql`), MySQL/MariaDB.
+- **App:** Flutter SDK (3.x), Android Studio/VS Code, fysisk enhet eller emulator.
+- **Pi:** Raspberry Pi OS, I²C aktiverat (`raspi-config` → Interface Options → I2C).
 
-**Krav:** Python 3.10+
+> Versionskrav kan behöva justeras efter verkliga `requirements.txt` och Flutterversion.
 
-```bash
-cd backend/flask-api
-python -m venv .venv && source .venv/bin/activate   # Win: .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env
-```
+---
 
-Fyll i `.env`:
+### Backend (Flask + MySQL/MariaDB)
 
-```
-# mysql eller sqlite
-DB_DIALECT=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_USER=appuser
-DB_PASS=hemligt
-DB_NAME=pulso
+1) **Skapa databas och tabell**
+   ```sql
+   CREATE DATABASE pulso DEFAULT CHARACTER SET utf8mb4;
+   USE pulso;
 
-# För SQLite: DB_DIALECT=sqlite och DB_NAME=./pulsosphere.db
-```
+   CREATE TABLE measurement (
+     id BIGINT AUTO_INCREMENT PRIMARY KEY,
+     bpm FLOAT NOT NULL,
+     ekg LONGTEXT NOT NULL,   -- JSON-text (lista av samples)
+     emg LONGTEXT NOT NULL,   -- JSON-text (lista av samples)
+     ts  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+   );
+````
 
-Starta API:
+2. **Konfigurera miljövariabler**
 
-```bash
-python app_db.py   # http://localhost:5001
-```
+   ```bash
+   # exempel – spara i .env (checka inte in) eller exportera i shell
+   export DB_HOST=127.0.0.1
+   export DB_PORT=3306
+   export DB_USER=pulso_user
+   export DB_PASS=superhemligt
+   export DB_NAME=pulso
+   export FLASK_APP=app.py
+   export FLASK_ENV=development
+   ```
 
-Snabbtest:
+3. **Installera och starta backend**
 
-```bash
-curl -X POST http://localhost:5001/data \
-  -H "Content-Type: application/json" \
-  -d '{"bpm":64,"ekg":[0.1,0.2,0.3],"emg":[0.05,0.06,0.07]}'
-curl http://localhost:5001/data
-```
+   ```bash
+   cd backend
+   python -m venv .venv
+   source .venv/bin/activate   # Windows: .venv\Scripts\activate
+   pip install -r requirements.txt
+   flask run -p 5000
+   ```
 
-### 2) Databas
+   Backend kör nu på `http://localhost:5000` (eller Pi:ns IP om du kör där).
 
-* **MySQL:** kör `db/mysql/schema.sql` i Workbench/CLI för att skapa `pulso` + `measurements`.
-* **SQLite:** ingen extra setup (fil skapas automatiskt av backend).
+---
 
-### 3) Device (Raspberry Pi)
+### API
 
-Pi-koden (i `device/pi-scripts/`) läser ADS1015/AD8232/MyoWare, filtrerar och skickar till API:
+#### POST `/data`
 
-```python
-import requests
-payload = {"bpm": bpm, "ekg": ekg_samples, "emg": emg_samples}
-requests.post("http://<backend-ip>:5001/data", json=payload, timeout=5)
-```
+Tar emot senaste mätning:
 
-Tips:
-
-* Skicka ~1 paket/sek eller efter varje beräknad BPM för rimlig nättrafik.
-* Lägg till retry/backoff vid nätverksfel.
-
-### 4) Mobil (Flutter)
-
-**Krav:** Flutter 3.x
-
-```bash
-cd mobile/flutter-app
-flutter pub get
-flutter run
-```
-
-Minimal fetch i appen:
-
-```dart
-final res = await http.get(Uri.parse('http://<backend-ip>:5001/data'));
-if (res.statusCode == 200) {
-  final data = jsonDecode(res.body);
-  final bpm = data['bpm'];
-  // TODO: uppdatera UI med bpm/ekg/emg
+```json
+{
+  "bpm": 62,
+  "ekg": [120, 121, 119, ...],
+  "emg": [8, 9, 7, ...]
 }
 ```
 
----
-
-## API
-
-**POST `/data`**
-
-* Body (JSON):
+**Svar (exempel):**
 
 ```json
-{ "bpm": 62, "ekg": [0.1, 0.2, 0.3], "emg": [0.05, 0.06, 0.07] }
+{ "status": "ok", "id": 123 }
 ```
 
-* Svar:
+#### GET `/data`
+
+Returnerar **senaste** mätningen (inkl. tidsstämpel). **Exempel:**
 
 ```json
-{ "status": "ok" }
+{
+  "id": 123,
+  "bpm": 62.0,
+  "ekg": [120, 121, 119, ...],
+  "emg": [8, 9, 7, ...],
+  "ts": "2025-05-30T11:22:33Z"
+}
 ```
 
-**GET `/data`**
+> **Rekommendationer**
+>
+> * CORS aktiverat i Flask om appen körs från annan origin.
+> * Tydliga felkoder (4xx/5xx), inputvalidering, try/except kring DB.
+> * I produktion: använd **HTTPS/TLS**, någon form av **auth** (t.ex. token/API-nyckel), samt ev. **rate limiting**.
 
-* Svar (JSON, senaste mätningen):
+---
 
-```json
-{ "id": 123, "ts": "2025-11-05T12:34:56", "bpm": 62, "ekg": [...], "emg": [...] }
+### Exponera API:t via ngrok (valfritt)
+
+Vill du demo:a utanför lokalt nät (t.ex. från Pi till mobilen via internet):
+
+```bash
+# installera & autentisera ngrok separat
+ngrok http 5000
 ```
 
-> Lägg gärna fler exempel och framtida endpoints i `docs/API.md`.
+* Kopiera den publika **https-URL:en** som ngrok visar (t.ex. `https://abc123.ngrok.io`).
+* Sätt den som `API_BASE_URL` i Flutter-appens konfiguration.
+
+> **Viktigt:** Checka **inte** in ngrok-token eller hemliga URL:er i repo. ngrok är för **dev/demo**, inte för produktion.
 
 ---
 
-## Hårdvara (översikt)
+### Mobilapp (Flutter)
 
-* **Raspberry Pi Zero 2 W**
-* **ADS1015** (I²C A/D)
-* **AD8232** (EKG), **MyoWare 2.0** (EMG)
-* Eget **PCB** (KiCad)
+1. **Konfigurera bas-URL**
 
-Rekommenderade dokument i `docs/`:
+   * Ange `API_BASE_URL`/`BASE_URL` i appens config (ex. Pi:ns IP: `http://<pi-ip>:5000` eller ngrok-URL).
 
-* `pinout.md` — Pi ↔ ADS1015 ↔ AD8232/MyoWare (text + bild)
-* `BOM.md` — komponentlista (del, mängd, länk)
-* `enclosure.md` — armbands-/låddesign (valfritt)
+2. **Installera och kör**
 
----
+   ```bash
+   cd app
+   flutter pub get
+   flutter run
+   ```
 
-## Utveckling & bidrag
+   Appen pollar `/data` periodiskt (t.ex. var 3:e sekund), visar BPM och live-grafer för EKG och EMG samt en historikvy.
 
-* Brancher: `feat/...`, `fix/...`, `chore/...`
-
-* Konventionella commit-meddelanden:
-
-  * `feat(api): add /history endpoint`
-  * `fix(device): stabilize R-peak detector`
-  * `docs(readme): update quickstart`
-
-* PR-checklista:
-
-  * [ ] Beskriv syfte och ändringar
-  * [ ] Uppdatera README/docs vid behov
-  * [ ] Kör analyser/tester lokalt
-
-Se `CONTRIBUTING.md` (valfritt).
+> **Tips:** Kör gärna backend och app på samma nät (LAN) för lägsta latens.
 
 ---
 
-## CI
+## Testning
 
-GitHub Actions kör:
-
-* Backend: installerar krav och kompilerar Python
-* Flutter: `flutter pub get` + `flutter analyze`
-
-Workflow: `.github/workflows/ci.yml`
-
-```yaml
-name: CI
-on: [push, pull_request]
-jobs:
-  backend:
-    runs-on: ubuntu-latest
-    defaults: { run: { working-directory: backend/flask-api } }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
-      - run: pip install -r requirements.txt
-      - run: python -m py_compile app_db.py db.py
-  flutter:
-    runs-on: ubuntu-latest
-    defaults: { run: { working-directory: mobile/flutter-app } }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with: { flutter-version: '3.24.0' }
-      - run: flutter pub get
-      - run: flutter analyze
-```
+* **Backend:** skriv enhetstester för API-endpoints (t.ex. `pytest`) och mocka DB-lagret.
+* **App:** widget-tester för vyer/state, integrationstest för polling mot en lokal test-server.
+* **Hårdvara:** mata in syntetiska vågformer (EKG-liknande) för att verifiera filtrering/R-toppdetektion.
 
 ---
 
-## Felsökning
+## Säkerhet & sekretess
 
-* **Glömt MySQL-lösenord?** Starta MySQL med `--skip-grant-tables` och kör `ALTER USER 'root'@'localhost' IDENTIFIED BY 'NyLösen!'`, starta om normalt.
-* **CORS i appen?** CORS är aktiverat i Flask (flask-cors). Säkerställ att appen pekar mot rätt IP/port.
-* **Tomma svar från `/data`?** Kontrollera att Pi skickar JSON som `{ bpm, ekg[], emg[] }` och att DB-uppkoppling är korrekt i `.env`.
-
----
-
-## Säkerhet & integritet
-
-* **Inte en medicinsk produkt**; ingen diagnos eller behandling.
-* Lagra aldrig hemligheter i git. Använd `.env` (ignoreras av `.gitignore`).
-* Begränsa MySQL-användare (t.ex. `appuser`) till endast nödvändiga privilegier.
+* Lagra inga personuppgifter i klartext. Undvik att checka in loggar eller rådata som kan kopplas till individ.
+* Hantera hemligheter via miljövariabler/secret manager. Använd **HTTPS** om trafik går över internet.
+* Lägg in en tydlig **disclaimer** i appen om icke-medicinsk användning.
 
 ---
 
-## Roadmap (förslag)
+## Begränsningar & framtida arbete
 
-* `/history?from=..&to=..` + aggregation per minut/timme
-* Signal-/rörelsestörningshantering, bättre filtrering
-* App: förbättrad historik med sök/filtrering och export
+* Det planerade **analoga lågpassfiltret (~25 Hz)** uteblev p.g.a. komponentbrist → all filtrering sker digitalt.
+* **Polling** (~3 s) fungerar för demo men ger onödig trafik. Överväg **WebSocket** eller **Server-Sent Events** för push.
+* Vidare arbete: artefakthantering (rörelser/elektrod-loss), adaptiv tröskel, dataexport, användarprofiler.
+
+---
+
+## Bidra
+
+PRs och issues välkomnas! Öppna gärna en issue för större förslag innan ni skickar PR.
+
+* Följ kodstil/formatterare där det finns (t.ex. `black` för Python, `dart format` för Flutter).
+* Skriv tester när det är rimligt.
+* Dela aldrig hemligheter i PR/Issues.
 
 ---
 
 ## Licens
 
-MIT — se `LICENSE`.
+Lägg till en licensfil (`LICENSE`) – t.ex. **MIT**, **Apache-2.0** eller annan valfri OSS-licens.
+
+---
+
+## Team & kurs
+
+**KTH – Projektkurs inom elektroteknik, del 2 (CM1002)**
+Team: Dennis Vidmant, Farhad Jelve, Karib Kaykobad, Muse Dubet & Peter Karlström
+
+---
+
+## Kontakt
+
+* Skapa en **issue** här i GitHub-repo:t.
+* För kursrelaterade frågor: följ kursens kommunikationskanaler.
+
+```
+
+Vill du att jag byter ut kommandon/paths (t.ex. rätt mappnamn för backend och Flutter-appen) efter exakt struktur i ditt repo? Skicka gärna en snabb trädvy så uppdaterar jag canvasen.
+```
