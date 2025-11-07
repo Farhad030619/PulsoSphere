@@ -116,7 +116,7 @@ PulsoSphere/
 ### Backend (Flask + MySQL/MariaDB)
 
 1) **Skapa databas och tabell**
-   ```sql
+``SQL``
    CREATE DATABASE pulso DEFAULT CHARACTER SET utf8mb4;
    USE pulso;
 
@@ -127,11 +127,11 @@ PulsoSphere/
      emg LONGTEXT NOT NULL,   -- JSON-text (lista av samples)
      ts  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
    );
-````
+``
 
 2. **Konfigurera miljövariabler**
 
-   ```bash
+   ``bash
    # exempel – spara i .env (checka inte in) eller exportera i shell
    export DB_HOST=127.0.0.1
    export DB_PORT=3306
@@ -140,11 +140,11 @@ PulsoSphere/
    export DB_NAME=pulso
    export FLASK_APP=app.py
    export FLASK_ENV=development
-   ```
+   ``
 
 3. **Installera och starta backend**
 
-   ```bash
+   ``bash
    cd backend
    python -m venv .venv
    source .venv/bin/activate   # Windows: .venv\Scripts\activate
