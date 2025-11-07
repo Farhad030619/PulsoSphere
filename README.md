@@ -268,12 +268,6 @@ PRs och issues välkomnas! Öppna gärna en issue för större förslag innan ni
 
 ---
 
-## Licens
-
-Lägg till en licensfil (`LICENSE`) – t.ex. **MIT**, **Apache-2.0** eller annan valfri OSS-licens.
-
----
-
 ## Team & kurs
 
 **KTH – Projektkurs inom elektroteknik, del 2 (CM1002)**
@@ -286,7 +280,3 @@ Team: Dennis Vidmant, Farhad Jelve, Karib Kaykobad, Muse Dubet & Peter Karlströ
 * Skapa en **issue** här i GitHub-repo:t.
 * För kursrelaterade frågor: följ kursens kommunikationskanaler.
 
-```
-
-Vill du att jag byter ut kommandon/paths (t.ex. rätt mappnamn för backend och Flutter-appen) efter exakt struktur i ditt repo? Skicka gärna en snabb trädvy så uppdaterar jag canvasen.
-```
