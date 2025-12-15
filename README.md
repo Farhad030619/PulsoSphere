@@ -1,6 +1,17 @@
 
 PulsoSphere
 
+_**Summary**_
+
+PulsoSphere is a student engineering project focused on embedded systems,
+real-time signal acquisition, and system-level data processing.
+
+The project combines embedded hardware, digital signal processing, a REST API,
+and a mobile application to demonstrate end-to-end system design and integration.
+
+Technologies: Embedded systems, Raspberry Pi, C/Python, digital signal processing,
+Flask (REST), MySQL/MariaDB, Flutter.
+
 PulsoSphere är ett bärbart system som mäter **EKG** (hjärta) och **EMG** (muskler) i realtid. Hårdvaran samlar signaler via **ADS1015** till **Raspberry Pi Zero 2 W**, där signalen filtreras och hjärtslag detekteras. Data skickas till ett **Flask-API** (MySQL/MariaDB) som konsumeras av en **Flutter-app** för live-grafer, puls (BPM) och historik.
 
 > **Viktig notis:** Detta är ett student-/demoprojekt och **inte** avsett för medicinsk diagnostik eller kliniskt bruk.
