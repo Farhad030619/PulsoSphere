@@ -1,296 +1,156 @@
-# PulsoSphere
+# PulsoSphere: Bärbart EKG- & EMG-mätsystem
 
-## Summary
+Ett integrerat, bärbart mätsystem för samtidig realtidsinsamling och visualisering av elektrokardiografi (EKG) och elektromyografi (EMG). Utvecklat som ett 9 HP ingenjörsprojekt inom kursen CM1002 (Projektkurs inom elektroteknik, del 2) vid Kungliga Tekniska Högskolan (KTH).
 
-PulsoSphere is a student engineering project focused on embedded systems,
-real-time signal acquisition, and system-level data processing.
+Projektet omfattar hela kedjan från egen hårdvarukonstruktion och PCB-tillverkning till digital signalbehandling på inbyggd Linux, REST-API och mobilapplikation.
 
-The project combines embedded hardware, digital signal processing, a REST API,
-and a mobile application to demonstrate end-to-end system design and integration.
+Utvecklat av Farhad Jelve, Dennis Vidmant, Karib Kaykobad, Muse Dubet och Peter Karlström under handledning av Martin Jakobsson vid KTH.
 
-**Technologies:** Embedded systems, Raspberry Pi, C/Python, digital signal processing,
-Flask (REST), MySQL/MariaDB, Flutter.
+Viktig notis: Detta är ett akademiskt ingenjörs- och forskningsprojekt och är inte avsett för medicinsk diagnostik eller kliniskt bruk.
 
 ---
 
-PulsoSphere är ett bärbart system som mäter **EKG** (hjärta) och **EMG** (muskler) i realtid.
-Hårdvaran samlar signaler via **ADS1015** till **Raspberry Pi Zero 2 W**, där signalerna
-filtreras och hjärtslag detekteras. Data skickas till ett **Flask-API** (MySQL/MariaDB)
-som konsumeras av en **Flutter-app** för live-grafer, puls (BPM) och historik.
+## Systemöversikt
 
-> **Viktig notis:** Detta är ett student-/demoprojekt och **inte** avsett för medicinsk diagnostik eller kliniskt bruk.
+Systemet samlar in biosignaler från kroppen, digitaliserar och filtrerar signalerna i realtid på en enkortsdator, och strömmar mätdata trådlöst till en mobilapp.
 
----
+![Systemarkitektur](docs/images/system_architecture.png)
 
-## Innehåll
-- [Översikt](#översikt)
-- [Systemarkitektur](#systemarkitektur)
-- [Funktioner](#funktioner)
-- [Hårdvara](#hårdvara)
-- [Projektstruktur](#projektstruktur)
-- [Kom igång](#kom-igång)
-  - [Backend (Flask + MySQL/MariaDB)](#backend-flask--mysqlmariadb)
-  - [API](#api)
-  - [Exponera API:t via ngrok (valfritt)](#exponera-apit-via-ngrok-valfritt)
-  - [Mobilapp (Flutter)](#mobilapp-flutter)
-- [Testning](#testning)
-- [Säkerhet & sekretess](#säkerhet--sekretess)
-- [Begränsningar & framtida arbete](#begränsningar--framtida-arbete)
-- [Bidra](#bidra)
-- [Team & kurs](#team--kurs)
+### Signalväg och arkitektur:
+1. Analoga sensorer: AD8232 extraherar hjärtsignaler (EKG) och MyoWare 2.0 mäter muskelaktivitet (EMG).
+2. A/D-omvandling: Signalerna digitaliseras via Texas Instruments ADS1015 (12-bitars ADC) över I2C-bussen.
+3. Centralenhet: Raspberry Pi Zero 2 W (ARM Cortex-A53) kör digital realtidsfiltrering och R-toppsdetektering i Python.
+4. Nätverksöverföring: Trådlösa JSON-anrop via Wi-Fi (HTTP POST) till ett REST-API.
+5. Backend: Flask med MySQL/MariaDB connection pool lagrar tidsserier och BPM-värden.
+6. Mobilapp: Flutter-applikation med Provider state-management och fl_chart för livegrafer.
 
 ---
 
-## Översikt
-PulsoSphere demonstrerar en lågkostnadsplattform för bärbar fysiologimätning:
-1. **Sensorer** (EKG/EMG) → 2. **ADC (ADS1015)** → 3. **Raspberry Pi Zero 2 W** (digital filtrering, R-toppdetektion, BPM) → 4. **Flask-API** (REST) + **MySQL/MariaDB** → 5. **Flutter-app** (livevisualisering & historik).
+## Hårdvarukonstruktion & PCB-design
 
-### Signalbehandling i korthet
-- EKG filtreras med bandpass (t.ex. Butterworth ~0,25–10 Hz).
-- R-toppar detekteras med en robust tröskel/logik.
-- BPM beräknas löpande från R-R-intervall.
-- EMG samplas och visas som amplitud/tidsserie.
+För att eliminera kabeltrassel och skapa en kompakt, testvänlig prototyp konstruerades ett skräddarsytt kretskort (PCB) i KiCad.
+
+### 1. Kopplingsschema (Schematic)
+Kretskortet designades med standard pin-headers för att modulärt ansluta Raspberry Pi Zero 2 W:s 40-poliga GPIO-header, ADS1015 ADC-kortet, AD8232 och MyoWare 2.0.
+
+![Kopplingsschema i KiCad](docs/images/kicad_schematic.png)
+
+- Spänningsmatning: +3.3 V och gemensam jord (GND) distribueras från Raspberry Pi.
+- I2C-kommunikation: SDA och SCL ansluts till ADS1015.
+- Analoga ingångar: EKG leds till kanal A0 och EMG till kanal A1 på ADS1015.
+
+### 2. Layout & Routing (B.Cu)
+Samtliga ledarbanor routades manuellt på kretskortets undersida (Bottom Copper, B.Cu) för att frigöra ovansidan för komponentmontering och undvika korsande signaler.
+
+![Kretskortslayout undersida](docs/images/pcb_routing_bcu.png)
+
+### 3. Fysisk 3D-modell & Tillverkning
+Kortet exporterades till Gerber- och borrfiler (drill files) och tillverkades fysiskt i PCB-fräsen i Makerspace vid KTH Flemingsberg.
+
+| Översida (Komponentmontering) | Undersida (Ledarbanor) |
+| :---: | :---: |
+| ![PCB 3D Översida](docs/images/pcb_3d_top.png) | ![PCB 3D Undersida](docs/images/pcb_3d_bottom.png) |
 
 ---
 
-## Systemarkitektur
+## Digital Signalbehandling (Python & SciPy)
+
+Biosignaler från kroppen är mycket svaga och känsliga för rörelseartefakter och 50 Hz nätbrum. All signalbehandling sker i realtid på Raspberry Pi Zero 2 W i `PI_Kod/RP.py`.
+
+### 1. Butterworth Bandpassfilter
+Ett 4:e ordningens digitalt Butterworth-bandpassfilter (0,25–10 Hz) implementerades med SciPy för att isolera hjärtfrekvensbandet och dämpa högfrekvent muskelbrus:
+
+```python
+from scipy.signal import butter, lfilter
+import numpy as np
+
+nyq = 20  # Nyquist-frekvens
+low = 0.005
+high = 0.2
+order = 4
+
+b, a = butter(order, [low, high], btype='band')
+zi = np.zeros(max(len(a), len(b)) - 1)
+
+# I mätslingan filtreras ett värde i taget i strömmande läge:
+y, zi = lfilter(b, a, [voltage], zi=zi)
+y = y[0]
 ```
 
-[AD8232 EKG]  
->--[ ADS1015 (I²C) ]--> [ Raspberry Pi Zero 2 W ]
-[MyoWare EMG] /                               |
-v
-[ Flask-API (REST) ] <--> [ MySQL/MariaDB ]
-|
-v
-[ Flutter-app ]
-
-```
-
-- **Pi Zero 2 W:** centralenhet (Wi-Fi/BLE, 40-pin GPIO).
-- **ADS1015:** 12-bitars ADC via I²C.
-- **AD8232 (EKG)** ansluts till A0, **MyoWare 2.0 (EMG)** till A1.
-- **API:** REST-endpoints för att *skicka in* (POST) och *hämta* (GET) senaste mätning.
-- **App:** pollar backend periodiskt (t.ex. ~3 s), visar BPM, EKG-/EMG-grafer samt historik.
+### 2. Tvåtröskel R-toppsdetektering
+Hjärtslag detekteras via en adaptiv tröskelalgoritm:
+- Spänningsdifferensen `Δy = y - y_last` kontrolleras mot ett intervall (0.2 V till 0.6 V).
+- En refraktärperiod på minst 0.2 sekunder krävs mellan slag för att förhindra dubbelräkning av T-vågor.
+- Hjärtfrekvensen (BPM) beräknas kontinuerligt från tidsdifferensen mellan registrerade R-toppar.
 
 ---
 
-## Funktioner
-- Realtids-EKG med digitalt bandpassfilter och R-toppdetektion → stabil BPM.
-- EMG-insamling via MyoWare och visning i appen.
-- Backend lagrar mätningar (BPM + listor för EKG/EMG + tidsstämpel) i databas.
-- Flutter-appen har vyer för **Live EKG**, **Live EMG**, **Historik** och **Inställningar**.
-- Valfri tunnel via **ngrok** när man vill demo:a utanför lokalt nät.
+## Mobilapplikation (Flutter)
 
----
+Mobilappen är byggd i Flutter och kommunicerar asynkront med Flask-backend via HTTP-polling var 3:e sekund.
 
-## Hårdvara
-- **Raspberry Pi Zero 2 W** – central enhet.
-- **ADS1015** – 12-bitars ADC via I²C.
-- **AD8232** – EKG-modul (A0).
-- **MyoWare 2.0** – EMG-modul (A1).
-- **Eget PCB (KiCad)** – headers för modulär inkoppling, korta kablar, B.Cu-routing.
+| Live EKG-vy (Puls 62 BPM) | Live EMG-vy (Muskelaktivering) |
+| :---: | :---: |
+| ![Live EKG](docs/images/live_ekg_flutter.png) | ![Live EMG](docs/images/live_emg_flutter.png) |
 
-> Lägg gärna in KiCad-filer (scheman, PCB, Gerbers) i `/hardware/` om de inte redan finns.
+### Appens arkitektur:
+- **fl_chart:** Vektoriserade realtidsgrafer som buffrar de senaste 100 datapunkterna.
+- **Provider:** Dependency injection och state-management för datakontroller, historik och temahantering.
+- **TweenAnimationBuilder:** Mjuka övergångar mellan uppdaterade pulsvärden.
 
 ---
 
 ## Projektstruktur
-> Exempel – justera efter ert faktiska repo.
-```
 
+```text
 PulsoSphere/
-├─ backend/
-│  ├─ app.py
-│  ├─ requirements.txt
-│  └─ src/...
-├─ app/                 # Flutter
-│  ├─ lib/
-│  ├─ pubspec.yaml
-│  └─ android/ios/...
-├─ hardware/            # KiCad, Gerbers, PDF-scheman
-├─ docs/                # ev. extra dokumentation
-└─ README.md
-
-````
-
----
-
-## Kom igång
-
-### Förkrav
-- **Backend:** Python 3.10+, Flask, flask-cors, MySQL-drivrutin (t.ex. `mysqlclient` eller `pymysql`), MySQL/MariaDB.
-- **App:** Flutter SDK (3.x), Android Studio/VS Code, fysisk enhet eller emulator.
-- **Pi:** Raspberry Pi OS, I²C aktiverat (`raspi-config` → Interface Options → I2C).
-
-> Versionskrav kan behöva justeras efter verkliga `requirements.txt` och Flutterversion.
-
----
-
-### Backend (Flask + MySQL/MariaDB)
-
-1) **Skapa databas och tabell**
-``SQL``
-   CREATE DATABASE pulso DEFAULT CHARACTER SET utf8mb4;
-   USE pulso;
-
-   CREATE TABLE measurement (
-     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-     bpm FLOAT NOT NULL,
-     ekg LONGTEXT NOT NULL,   -- JSON-text (lista av samples)
-     emg LONGTEXT NOT NULL,   -- JSON-text (lista av samples)
-     ts  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-   );
-``
-
-2. **Konfigurera miljövariabler**
-
-   ``bash
-   # exempel – spara i .env (checka inte in) eller exportera i shell
-   export DB_HOST=127.0.0.1
-   export DB_PORT=3306
-   export DB_USER=pulso_user
-   export DB_PASS=superhemligt
-   export DB_NAME=pulso
-   export FLASK_APP=app.py
-   export FLASK_ENV=development
-   ``
-
-3. **Installera och starta backend**
-
-   ``bash
-   cd backend
-   python -m venv .venv
-   source .venv/bin/activate   # Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
-   flask run -p 5000
-   ```
-
-   Backend kör nu på `http://localhost:5000` (eller Pi:ns IP om du kör där).
-
----
-
-### API
-
-#### POST `/data`
-
-Tar emot senaste mätning:
-
-```json
-{
-  "bpm": 62,
-  "ekg": [120, 121, 119, ...],
-  "emg": [8, 9, 7, ...]
-}
+├── API/
+│   └── api.py              # Flask REST-API med MySQL/MariaDB connection pool
+├── APP/
+│   └── our_flutter_app/    # Flutter mobilapplikation (iOS & Android)
+├── PI_Kod/
+│   └── RP.py               # Sensorinsamling (I2C) & realtidsfiltrering (SciPy)
+├── database/
+│   └── db.sql              # Databasschema för tidsserieloggning
+├── docs/
+│   └── images/             # Scheman, PCB-renderingar och appgrafer
+└── README.md
 ```
 
-**Svar (exempel):**
-
-```json
-{ "status": "ok", "id": 123 }
-```
-
-#### GET `/data`
-
-Returnerar **senaste** mätningen (inkl. tidsstämpel). **Exempel:**
-
-```json
-{
-  "id": 123,
-  "bpm": 62.0,
-  "ekg": [120, 121, 119, ...],
-  "emg": [8, 9, 7, ...],
-  "ts": "2025-05-30T11:22:33Z"
-}
-```
-
-> **Rekommendationer**
->
-> * CORS aktiverat i Flask om appen körs från annan origin.
-> * Tydliga felkoder (4xx/5xx), inputvalidering, try/except kring DB.
-> * I produktion: använd **HTTPS/TLS**, någon form av **auth** (t.ex. token/API-nyckel), samt ev. **rate limiting**.
-
 ---
 
-### Exponera API:t via ngrok (valfritt)
+## Installation & Körning
 
-Vill du demo:a utanför lokalt nät (t.ex. från Pi till mobilen via internet):
-
+### 1. Raspberry Pi (Sensornod)
+Kräver Raspberry Pi OS med I2C aktiverat:
 ```bash
-# installera & autentisera ngrok separat
-ngrok http 5000
+sudo raspi-config  # Aktivera Interface Options -> I2C
+pip install adafruit-circuitpython-ads1x15 scipy numpy requests
+python3 PI_Kod/RP.py
 ```
 
-* Kopiera den publika **https-URL:en** som ngrok visar (t.ex. `https://abc123.ngrok.io`).
-* Sätt den som `API_BASE_URL` i Flutter-appens konfiguration.
+### 2. Backend API
+```bash
+cd API
+python3 -m venv .venv
+source .venv/bin/activate
+pip install flask flask-cors mysql-connector-python
+python3 api.py
+```
 
-> **Viktigt:** Checka **inte** in ngrok-token eller hemliga URL:er i repo. ngrok är för **dev/demo**, inte för produktion.
-
----
-
-### Mobilapp (Flutter)
-
-1. **Konfigurera bas-URL**
-
-   * Ange `API_BASE_URL`/`BASE_URL` i appens config (ex. Pi:ns IP: `http://<pi-ip>:5000` eller ngrok-URL).
-
-2. **Installera och kör**
-
-   ```bash
-   cd app
-   flutter pub get
-   flutter run
-   ```
-
-   Appen pollar `/data` periodiskt (t.ex. var 3:e sekund), visar BPM och live-grafer för EKG och EMG samt en historikvy.
-
-> **Tips:** Kör gärna backend och app på samma nät (LAN) för lägsta latens.
+### 3. Flutter Applikation
+```bash
+cd APP/our_flutter_app
+flutter pub get
+flutter run
+```
 
 ---
 
-## Testning
+## Akademisk Referens & Upphovspersoner
 
-* **Backend:** skriv enhetstester för API-endpoints (t.ex. `pytest`) och mocka DB-lagret.
-* **App:** widget-tester för vyer/state, integrationstest för polling mot en lokal test-server.
-* **Hårdvara:** mata in syntetiska vågformer (EKG-liknande) för att verifiera filtrering/R-toppdetektion.
-
----
-
-## Säkerhet & sekretess
-
-* Lagra inga personuppgifter i klartext. Undvik att checka in loggar eller rådata som kan kopplas till individ.
-* Hantera hemligheter via miljövariabler/secret manager. Använd **HTTPS** om trafik går över internet.
-* Lägg in en tydlig **disclaimer** i appen om icke-medicinsk användning.
-
----
-
-## Begränsningar & framtida arbete
-
-* Det planerade **analoga lågpassfiltret (~25 Hz)** uteblev p.g.a. komponentbrist → all filtrering sker digitalt.
-* **Polling** (~3 s) fungerar för demo men ger onödig trafik. Överväg **WebSocket** eller **Server-Sent Events** för push.
-* Vidare arbete: artefakthantering (rörelser/elektrod-loss), adaptiv tröskel, dataexport, användarprofiler.
-
----
-
-## Bidra
-
-PRs och issues välkomnas! Öppna gärna en issue för större förslag innan ni skickar PR.
-
-* Följ kodstil/formatterare där det finns (t.ex. `black` för Python, `dart format` för Flutter).
-* Skriv tester när det är rimligt.
-* Dela aldrig hemligheter i PR/Issues.
-
----
-
-## Team & kurs
-
-**KTH – Projektkurs inom elektroteknik, del 2 (CM1002)**
-Team: Dennis Vidmant, Farhad Jelve, Karib Kaykobad, Muse Dubet & Peter Karlström
-
----
-
-## Kontakt
-
-* Skapa en **issue** här i GitHub-repo:t.
-* För kursrelaterade frågor: följ kursens kommunikationskanaler.
-
+Detta projekt genomfördes under vårterminen vid Kungliga Tekniska Högskolan:
+- **Kurs:** CM1002 Projektkurs inom elektroteknik, del 2 (9 HP)
+- **Handledare:** Martin Jakobsson, KTH
+- **PCB-tillverkning:** Linus Remahl, Makerspace KTH Flemingsberg
+- **Författare:** Farhad Jelve, Dennis Vidmant, Karib Kaykobad, Muse Dubet, Peter Karlström
